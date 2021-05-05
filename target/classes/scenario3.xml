@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:s3="http://www.mulesoft.org/schema/mule/s3"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd 
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd">
+	<flow name="sceanrio3" doc:id="2a453eba-e363-4186-98bd-82a17e59d19c" initialState="stopped">
+		<scheduler doc:name="Scheduler" doc:id="caa36ca9-238c-42ef-b536-e3721af898e2" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="1" timeUnit="HOURS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<s3:get-object doc:name="Get object" doc:id="deddcbbd-a54e-4e2a-afe9-103a12815f55" config-ref="Amazon_S3_Configuration" bucketName="filelandingzone" key='#["New Order.csv"]' />
+		<ee:transform doc:name="Transform Message" doc:id="292edda0-b72e-426b-8697-0b4e8639a721" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="error-scenario3" doc:id="488e2cbe-54e7-44e8-a154-bbe7f18335fb">
+			<batch:process-records >
+				<batch:step name="Batch_Step" doc:id="dd87aaad-a608-4507-b728-850eacd5ce78">
+					<ee:transform doc:name="Transform Message" doc:id="f0c8833e-bd9e-467d-84aa-d1717b44085c">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="4ae9c447-922c-4e0d-b285-69061c11ffc0" size="10" preserveMimeTypes="true">
+						<ee:transform doc:name="Transform Message" doc:id="1f72903e-29da-412f-b37f-e4578f238cd0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+						<http:request method="POST" doc:name="Request" doc:id="27012052-3942-4366-a045-fb7dd23b072f" config-ref="HTTP_Request_configuration" url="http://localhost:8081/abc3" />
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Logger" doc:id="1b234c9b-a17e-4201-a4b3-d72a73577740" message='#["complya"]'/>
+			</batch:on-complete>
+		</batch:job>
+	
+</flow>
+	<flow name="error-handling" doc:id="adb73c13-1fa8-4997-afbd-c3844c3f1b85" >
+		<http:listener doc:name="Listener" doc:id="ad667798-7833-42dc-aff8-c0d11000b092" config-ref="HTTP_Listener_config" path="/abc3"/>
+		<ee:transform doc:name="Transform Message" doc:id="d383d45c-34b8-44a9-9d23-5d4f3e5562f9" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[[]]" doc:name="error" doc:id="e48522df-c3dc-425b-9f0b-339b6cc377f8" variableName="error"/>
+		<set-variable value="#[[]]" doc:name="success" doc:id="fb6df0a1-d63e-4911-a64d-bbfed9a6c88a" variableName="success"/>
+		<foreach doc:name="For Each" doc:id="c7198ba4-d7c6-4d53-88a6-01ab88720f8f" >
+			<choice doc:name="Choice" doc:id="3c4fcfd2-f76b-42e8-b834-b3d27386e886">
+				<when expression="#[(payload.ProductPrice) &lt;= 140]">
+					<try doc:name="Try" doc:id="1e0d9b6e-e073-488a-a941-09a3cafa294d">
+						<raise-error doc:name="Raise error" doc:id="99eab830-4e54-42a2-bb4e-f05ece53b2dd" type="ANY" />
+						<error-handler>
+							<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="32f19b2c-08ad-409d-aab0-578611478e3f">
+				<ee:transform doc:name="Transform Message" doc:id="38d4114d-e1a2-4e73-a577-01bcc953c631">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+								<set-variable value="#[output application/json --- vars.error + payload]" doc:name="error" doc:id="aa3ddb7d-0b82-4864-b5f7-2fffadb50e89" variableName="error" />
+			</on-error-continue>
+						</error-handler>
+					</try>
+				</when>
+				<otherwise>
+					<ee:transform doc:name="Transform Message" doc:id="651f51fa-c975-4c25-a6d7-499c64b33005">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<set-variable value="#[output application/json --- vars.success + payload]" doc:name="success" doc:id="e431cd4d-259e-4fb5-b686-9d16015f8b04" variableName="success"/>
+				</otherwise>
+			</choice>
+		</foreach>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="72744a9a-98cb-4ce1-bb39-08d9471f7c8d" >
+			<route >
+				<ee:transform doc:name="Transform Message" doc:id="34515efb-c358-4ecf-8f8a-246dddb649b0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/csv
+header = false
+---
+vars.error]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+				<file:write doc:name="Write" doc:id="f56eea82-657f-42d7-888c-3846a92377ff" config-ref="File_Config" path="#['error_scenario_3__' ++ (now() as String {format:'yyyy-MM-dd-hh-mm-ss-SSSSSSSS'}  ) ++ '.csv']"/>
+			
+</route>
+			<route >
+				<ee:transform doc:name="Transform Message" doc:id="121b408c-0e28-4078-9879-2b89ada74774" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/csv
+header = false
+---
+vars.success]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<s3:create-object doc:name="Create object" doc:id="41d44788-003f-4b6f-8e52-17f573b54bf0" config-ref="Amazon_S3_Configuration" bucketName="filesuccess" key="#['success_sceanrio_3__' ++ (now() as String {format:'yyyy-MM-dd-hh-mm-ss-SSSSSSSS'}  ) ++ '.csv']" />
+			
+</route>
+		</scatter-gather>
+		<logger level="INFO" doc:name="Logger" doc:id="56a0b026-ec85-4cb6-8cac-9bdbfc02aee2" />
+	</flow></mule>

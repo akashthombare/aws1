@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd 
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd">
+<flow name="sceanrio4" doc:id="9e7274d3-5430-49a3-94ad-daa0141d8f02" initialState="started">
+		<scheduler doc:name="Scheduler" doc:id="1e2eded4-b163-4600-ad9a-bea126b90d18" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="1" timeUnit="HOURS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<s3:get-object doc:name="Get object" doc:id="4e3aa9cc-fb01-4f1b-9781-9b8ac36b4eab" config-ref="Amazon_S3_Configuration" bucketName="filelandingzone" key='#["New Order.csv"]' />
+		<ee:transform doc:name="Transform Message" doc:id="ce0d4500-7db6-4277-bd53-08187437e222" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload groupBy ((item, index) -> item.CustomerID)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="error-scenario4" doc:id="347fb7ae-4ca7-4c77-9a91-a6788a2c0a27">
+			<batch:process-records >
+				<batch:step name="Batch_Step" doc:id="14c6b715-156d-41ca-a678-66c18cc5b828">
+					<ee:transform doc:name="Transform Message" doc:id="a08ce086-4cb9-4a59-ba58-05aaf55c6e36">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<http:request method="POST" doc:name="Request" doc:id="66ea844e-cca9-4bfd-8980-cbad25702703" config-ref="HTTP_Request_configuration" url="http://localhost:8081/abc4" />
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Logger" doc:id="cae324cc-3dcd-4a8a-95f2-5aba335a827b" message='#["complya"]'/>
+			</batch:on-complete>
+		</batch:job>
+	
+</flow>
+	<flow name="error-handling-4" doc:id="7bae42c2-efc6-40be-b5ea-07798652b49d" >
+		<http:listener doc:name="Listener" doc:id="b5fd4ae9-9a87-459b-9e88-4c3efdde2a88" config-ref="HTTP_Listener_config" path="/abc4"/>
+		<logger level="INFO" doc:name="Logger" doc:id="373e607e-0d82-46ae-8df8-a69965a32d3a" message="#[correlationId]"/>
+		<ee:transform doc:name="Transform Message" doc:id="872b93ee-6dd7-45ef-8ce0-cc72b27c0971" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/csv
+---
+payload[0]]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<file:write doc:name="Write" doc:id="f2122bf1-8bc1-4398-ac70-2e31f54f3ae9" config-ref="File_Config" path="#['new' ++ (now() as String {format:'yyyy-MM-dd-hh-mm-ss-SSSSSSSS'}  ) ++ '.csv']" />
+		<logger level="INFO" doc:name="Logger" doc:id="2ecaac73-43cf-4180-9346-3f686b426568" />
+	</flow>
+	<flow name="scenario4Flow" doc:id="5e909823-1ed8-4a77-ad50-d3cdb6b14a65" >
+		<s3:create-object doc:name="Create object" doc:id="a7e51a0f-fbe7-4d36-9ffb-4f0cf0d36eb1" config-ref="Amazon_S3_Configuration" bucketName="filelandingzone" key='#["groupBy_CustomerID.json"]' />
+	</flow>
+
+</mule>
