@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<s3:config name="Amazon_S3_Configuration" doc:name="Amazon S3 Configuration" doc:id="5df3cf81-d49b-4f9e-86e5-1f388d05bc2f" >
+		<s3:basic-connection accessKey="AKIA2DROBHIVHNUE3RWN" secretKey="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" region="AP_SOUTH_1"/>
+	</s3:config>
+	<file:config name="File_Config" doc:name="File Config" doc:id="40a1152d-fa8f-4e63-bb18-5b203e29b8ea" >
+		<file:connection workingDir="C:\Users\Akash\Desktop\fileOutput" />
+	</file:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="7f06b280-2d2f-463d-8966-0101c467cd56" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="d74176a8-d5f2-4cbd-8ef7-6543140d4a2f" >
+		<vm:queues >
+			<vm:queue queueName="records" />
+		</vm:queues>
+	</vm:config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="50bc1ea7-edbd-469e-bb24-ebde4133d3c8" >
+		<http:request-connection host="localhost" port="8081" />
+	</http:request-config>
+	<flow name="awsScenario5" doc:id="2b30155f-92e5-45eb-9bee-59af4ac8021f">
+		<http:listener doc:name="Listener" doc:id="eb66ab40-b0b4-42e0-9ac9-628515594f9a" config-ref="HTTP_Listener_config" path="/aws" />
+		<s3:get-object doc:name="Get object" doc:id="dbf4bc6f-704b-4964-a6a2-4ad55e55b201" config-ref="Amazon_S3_Configuration" bucketName="myfiles12" key="aadharCardsAgencies.csv" />
+		<ee:transform doc:name="Transform Message" doc:id="b8873185-b738-45e0-9e85-e5c28b60793e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="awsBatch_Job1" doc:id="33074044-b170-4441-95bf-d2fab5514cd6">
+			<batch:process-records>
+				<batch:step name="Batch_Step1" doc:id="02f03be9-0865-4d38-bbb5-3c2c6778f631">
+					<logger level="INFO" doc:name="Logger" doc:id="ed230cb7-45c2-4417-b90b-709e855b4ba6" message="#[payload]" />
+					<try doc:name="Try" doc:id="155f2812-ef8d-4e4f-9699-333bf6a0d503">
+						<ee:transform doc:name="Transform Message" doc:id="8d282160-154e-4e52-affc-4952ca0af89b">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+import * from dw::Runtime
+output application/java
+---
+if (payload."SR. NO" as Number < 120 ) payload else fail("id > 120")
+]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+						<error-handler>
+							<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="8620c0a9-bc57-4fe7-83e9-aa7327216b60" >
+								<vm:publish doc:name="Publish" doc:id="98c976a9-3ffe-4828-9f95-1a2470ce1abd" config-ref="VM_Config" queueName="records"/>
+							</on-error-propagate>
+						</error-handler>
+					</try>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="3f43d01d-33c0-4a05-840e-1415f2a4b383" size="20">
+						<http:request method="GET" doc:name="Request" doc:id="7dc62256-87c3-48ed-a26b-89e67c09093a" config-ref="HTTP_Request_configuration" path="/json2aws"/>
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete>
+				<logger level="INFO" doc:name="Logger" doc:id="375a5d6d-376b-4622-9d83-150c2509f4c2" message="#[payload]" />
+			</batch:on-complete>
+		</batch:job>
+		<ee:transform doc:name="Transform Message" doc:id="d069d575-eb17-4145-9ebb-9398073a3d6e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="aws5Scenario" doc:id="42c3835a-a5b7-4064-86b7-d0f5a4def6ef" >
+		<vm:listener queueName="records" doc:name="Listener" doc:id="1594f2bc-7862-421d-b246-c0836d4611c0" config-ref="VM_Config"/>
+		<logger level="INFO" doc:name="Logger" doc:id="fd611b75-2e2a-47fc-a6af-4971b387b0ab" message="#[payload]"/>
+		<file:write doc:name="Write" doc:id="9ce153f3-cbb0-4c41-9005-668613491d8b" config-ref="File_Config" path='#["G:aws/temp/aws"++  now() as String {format: "yyyy.MM.dd.hh.mm.ss.SSS"} ++ ".csv"]' mode="APPEND">
+			<file:content ><![CDATA[#[output application/csv
+---
+payload]]]></file:content>
+		</file:write>
+	</flow>
+	<flow name="awsScenario6" doc:id="4afbddde-f540-45f3-90ec-8165b5daa0f9" >
+		<vm:listener doc:name="Listener" doc:id="fed638c2-a792-444d-a624-ac1be7b981d6" config-ref="VM_Config" queueName="records"/>
+		<ee:transform doc:name="Transform Message" doc:id="ed0e4a7f-0b4b-4062-921d-500e5756252a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/csv
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<s3:create-object doc:name="Create object" doc:id="117ab063-d8ad-4643-bd79-b0059c9f137f" config-ref="Amazon_S3_Configuration" bucketName="myfiles12" key='#["error/aws.csv"]'/>
+		<logger level="INFO" doc:name="Logger" doc:id="c5ae7386-b284-4ae2-af52-5ee82d2ba895" message="#[payload]"/>
+	</flow>
+	<flow name="awsFlow2" doc:id="c80c8f4e-7e63-4244-a548-d856f084397f" >
+		<http:listener doc:name="Listener" doc:id="cad182f7-2c77-4e5f-b9a2-0c6d8f993d26" config-ref="HTTP_Listener_config" path="/json2aws"/>
+		<s3:create-object doc:name="Create object" doc:id="78a064ef-854e-446b-9bb7-fa74deed485c" config-ref="Amazon_S3_Configuration" bucketName="myfiles12" key='#["done/aws" ++ now() as String {format: "yyyy.MM.dd.hh.mm.ss.SSS"} ++ ".csv"]'>
+			<s3:object-content ><![CDATA[#[output application/json
+---
+payload]]]></s3:object-content>
+		</s3:create-object>
+		<logger level="INFO" doc:name="Logger" doc:id="8a4d37bd-f49a-4630-a8a0-9861bd04345a" message="#[payload]"/>
+		<ee:transform doc:name="Transform Message" doc:id="19b0067d-0ca6-4c20-9f41-717ecaad620d" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="awsFlow" doc:id="dd95a369-a600-488c-954d-30a66b74ebeb" initialState="stopped">
+		<http:listener doc:name="Listener" doc:id="ea998f76-a5ee-4916-aef6-d764458adcf1" config-ref="HTTP_Listener_config" path="/"/>
+		<batch:job jobName="awsBatch_Job" doc:id="95011277-a18e-4727-b6c0-8de02a4ef8db">
+			<batch:process-records>
+				<batch:step name="Batch_Step" doc:id="55bf13a6-73c8-4c43-8d24-ff644f6ddfe4">
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="a398bb7f-a900-4b5e-a475-d87053b48f53" size="20">
+						<logger level="INFO" doc:name="Logger" doc:id="252fa621-eec6-4419-88b6-49445614e81e" message="payload" />
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete>
+				<logger level="INFO" doc:name="Logger" doc:id="bb7b0b65-042f-4e14-87fb-cbbaff1f4b46" message="#[payload]" />
+			</batch:on-complete>
+		</batch:job>
+	</flow>
+	<flow name="Copy_of_awsFlow" doc:id="02e86d2f-c612-44e7-a901-7735248a2d4e" >
+		<http:listener doc:name="Listener" doc:id="20a4ed61-5691-4cbe-a226-6c5715c7b5f5" config-ref="HTTP_Listener_config" path="/aws" />
+		<s3:get-object doc:name="Get object" doc:id="4735de89-2a3e-47f0-a05b-6c68c86b017c" config-ref="Amazon_S3_Configuration" bucketName="myfiles12" key="aadharCardsAgencies.csv" />
+		<ee:transform doc:name="Copy_of_Transform Message" doc:id="fb64d0f3-4865-4b92-93e1-9bbfffb024d7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="Copy_of_awsBatch_Job1" doc:id="8715ce50-860a-4f69-9f54-ba9eadfdb6cc" >
+			<batch:process-records >
+				<batch:step name="Copy_of_Batch_Step1" doc:id="461686a6-f99d-41c3-b2a6-f98676394e3b" >
+					<try doc:name="Try" doc:id="32d43e3b-1ac9-4498-8952-7ae8e57d0c71" >
+						<ee:transform doc:name="Transform Message" doc:id="419ebe0e-12ae-4f78-8f32-9981a5cc1f2b" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<error-handler >
+							<on-error-propagate enableNotifications="true" logException="true" doc:name="Copy_of_On Error Propagate" doc:id="a247b6d9-72a7-4582-b5d2-59d884a9f01d" type="ANY" >
+								<vm:publish queueName="records" doc:name="Copy_of_Publish" doc:id="d5450979-3979-45f0-a607-e2ea56f2edf4" config-ref="VM_Config" />
+							</on-error-propagate>
+						</error-handler>
+					</try>
+					<logger level="INFO" doc:name="Copy_of_Logger" doc:id="fefc2297-b212-43d2-a077-06b15355a18d" message="#[payload]" />
+					<batch:aggregator doc:name="Copy_of_Batch Aggregator" doc:id="063ef417-c5dc-443e-9101-5c5df0f3e399" size="20" >
+						<file:write doc:name="Copy_of_Write" doc:id="82ab9092-73a4-46b0-80d0-7cee2535b023" config-ref="File_Config" path='#["G:\aggregator\aws" ++ now() as String {format: "yyyy.MM.dd.hh.mm.ss.SSS"} ++ ".csv"]' >
+							<file:content ><![CDATA[#[output application/csv
+---
+payload]]]></file:content>
+						</file:write>
+						<s3:create-object doc:name="Copy_of_Create object" doc:id="87313182-3c7e-4755-92c6-96e4989030f3" config-ref="Amazon_S3_Configuration" bucketName="myfiles12" key='#["done/aws" ++ now() as String {format: "yyyy.MM.dd.hh.mm.ss.SSS"} ++ ".csv"]' >
+							<s3:object-content ><![CDATA[#[output application/csv
+---
+payload]]]></s3:object-content>
+						</s3:create-object>
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Copy_of_Logger" doc:id="bd944fbf-6929-49c0-a668-cb012073f71f" message="#[payload]" />
+			</batch:on-complete>
+		</batch:job>
+		<http:request method="GET" doc:name="Copy_of_Request" doc:id="5a0a6755-b7dd-4b79-8cdc-ecef52a0a0a9" config-ref="HTTP_Request_configuration" />
+		<ee:transform doc:name="Copy_of_Transform Message" doc:id="530f9cbd-588d-4410-9e2a-d22b9090d1a1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>
